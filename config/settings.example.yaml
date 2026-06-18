@@ -1,0 +1,9 @@
+video_source: "rtsp://user:password@your-camera-ip:554/1"
+model_weights: "weights/yolov8n-pose.pt"
+aspect_ratio_threshold: 0.85
+angle_threshold_degrees: 30.0
+min_keypoint_confidence: 0.3
+fall_frame_threshold: 5
+stream_reconnect_retries: 5
+csv_log_path: "alerts/logs.csv"
+screenshots_dir: "alerts/screenshots"

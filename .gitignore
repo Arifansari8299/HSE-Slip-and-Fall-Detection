@@ -1,0 +1,62 @@
+# Virtual environments
+fall_env/
+venv/
+env/
+.env/
+.venv/
+
+
+# R&D / scratch work
+R&D/
+
+# Model weights (large binary files)
+weights/*.pt
+weights/*.pth
+weights/*.onnx
+
+# Alert data (runtime-generated)
+alerts/logs.csv
+alerts/screenshots/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Config with real credentials (commit settings.example.yaml instead)
+config/settings.yaml
+
+# Environment variables / secrets
+.env
+*.env
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
