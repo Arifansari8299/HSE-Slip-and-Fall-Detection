@@ -35,6 +35,15 @@ class FallDetector:
 
     def check(self, bbox, keypoints, track_id: int) -> tuple[bool, float]:
         """Return (is_confirmed_fall, aspect_ratio) for one person in one frame."""
+        
+        # ------------------------------------------------------------------
+        #  CHAIR ELIMINATION FILTER: 
+        # Skip the object if it lacks valid human keypoints to filter out empty chairs.
+        # ------------------------------------------------------------------
+        if keypoints is None or self._count_confident_keypoints(keypoints, _REQUIRED_INDICES) < 3:
+            return False, 0.0
+        # ------------------------------------------------------------------
+
         x1, y1, x2, y2 = bbox
         width = x2 - x1
         height = y2 - y1
@@ -56,9 +65,17 @@ class FallDetector:
 
         counter = self._fall_counter.get(track_id, 0)
 
-        # Emit confirmed fall once per episode (suppress duplicates)
-        if counter >= self.fall_frame_threshold and not self._fall_confirmed.get(track_id, False):
-            self._fall_confirmed[track_id] = True
+        # ------------------------------------------------------------------
+        # 🔄 VISUAL ALERT CONTINUOUS LOGIC:
+        # ------------------------------------------------------------------
+        if counter >= self.fall_frame_threshold:
+            # First time fall occurs in this episode -> Trigger screenshot & CSV logging
+            if not self._fall_confirmed.get(track_id, False):
+                self._fall_confirmed[track_id] = True
+                return True, aspect_ratio
+            
+            # If person remains in fall position -> Maintain the visual RED alert 
+            # while suppressing duplicate screenshot/logging triggers in pipeline
             return True, aspect_ratio
 
         return False, aspect_ratio

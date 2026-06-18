@@ -38,6 +38,9 @@ config/settings.yaml
 .env
 *.env
 
+# Kiro IDE
+.kiro/
+
 # IDE / editor
 .vscode/
 .idea/
