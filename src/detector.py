@@ -28,21 +28,19 @@ class FallDetector:
         # Per-track state
         self._fall_counter: dict[int, int] = {}
         self._fall_confirmed: dict[int, bool] = {}
+        self._screenshot_taken: dict[int, bool] = {}  # Tracks if snapshot is already captured
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def check(self, bbox, keypoints, track_id: int) -> tuple[bool, float]:
-        """Return (is_confirmed_fall, aspect_ratio) for one person in one frame."""
+        """Return (is_fall_active_on_screen, aspect_ratio) for one person."""
         
-        # ------------------------------------------------------------------
-        #  CHAIR ELIMINATION FILTER: 
-        # Skip the object if it lacks valid human keypoints to filter out empty chairs.
-        # ------------------------------------------------------------------
+        # ❌ CHAIR ELIMINATION FILTER: 
+        # Skip objects lacking valid human torso/face structural points.
         if keypoints is None or self._count_confident_keypoints(keypoints, _REQUIRED_INDICES) < 3:
             return False, 0.0
-        # ------------------------------------------------------------------
 
         x1, y1, x2, y2 = bbox
         width = x2 - x1
@@ -59,26 +57,25 @@ class FallDetector:
         if fall_condition:
             self._fall_counter[track_id] = self._fall_counter.get(track_id, 0) + 1
         else:
-            # Upright posture — reset counter and suppression flag
+            # Upright posture — reset everything for this ID
             self._fall_counter[track_id] = 0
             self._fall_confirmed[track_id] = False
+            self._screenshot_taken[track_id] = False
 
         counter = self._fall_counter.get(track_id, 0)
 
-        # ------------------------------------------------------------------
-        # 🔄 VISUAL ALERT CONTINUOUS LOGIC:
-        # ------------------------------------------------------------------
+        # If counter crosses threshold, box should be continuously RED on screen
         if counter >= self.fall_frame_threshold:
-            # First time fall occurs in this episode -> Trigger screenshot & CSV logging
-            if not self._fall_confirmed.get(track_id, False):
-                self._fall_confirmed[track_id] = True
-                return True, aspect_ratio
-            
-            # If person remains in fall position -> Maintain the visual RED alert 
-            # while suppressing duplicate screenshot/logging triggers in pipeline
             return True, aspect_ratio
 
         return False, aspect_ratio
+
+    def should_save_screenshot(self, track_id: int) -> bool:
+        """Return True only once per fall event to capture a single snapshot."""
+        if not self._screenshot_taken.get(track_id, False):
+            self._screenshot_taken[track_id] = True
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -95,7 +92,7 @@ class FallDetector:
         confident_count = self._count_confident_keypoints(keypoints, _REQUIRED_INDICES)
 
         if confident_count < 4:
-            # Keypoint fallback: use aspect ratio only (Req 4.5)
+            # Keypoint fallback: use aspect ratio only
             return ratio_trigger
 
         spine_angle = self._compute_spine_angle(keypoints)
@@ -122,7 +119,6 @@ class FallDetector:
             (keypoints[_L_HIP, 0], keypoints[_L_HIP, 1]),
             (keypoints[_R_HIP, 0], keypoints[_R_HIP, 1]),
         )
-        # Guard against zero-length vector
         if shoulder_mid == hip_mid:
             return None
         return angle_from_vertical(shoulder_mid, hip_mid)

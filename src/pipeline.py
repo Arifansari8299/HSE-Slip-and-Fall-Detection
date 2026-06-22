@@ -109,7 +109,8 @@ class PoseModel:
         self._model = YOLO(weights_path)
 
     def infer(self, frame: np.ndarray) -> list:
-        results = self._model.track(frame, persist=True, verbose=False, classes=[0])
+        # High resolution coverage optimization (conf=0.35)
+        results = self._model.track(frame, persist=True, verbose=False, classes=[0], conf=0.35)
         persons = []
         if not results:
             return persons
@@ -219,16 +220,21 @@ class Pipeline:
                 persons = self._model.infer(frame)
 
                 for person in persons:
+                    # Pure boolean evaluation logic (Clean & stable framework connection)
                     is_fall, ratio = self._detector.check(
                         person.bbox, person.keypoints, person.track_id
                     )
+                    
                     if is_fall:
                         color = (0, 0, 255)
                         label = f"FALL DETECTED! ID: {person.track_id}"
-                        screenshot_name = self._screenshot_saver.save(
-                            frame, person.bbox, person.track_id
-                        )
-                        self._alert_logger.log(person.track_id, ratio, screenshot_name)
+                        
+                        # Trigger system logging and snapshot ONLY once per track session
+                        if self._detector.should_save_screenshot(person.track_id):
+                            screenshot_name = self._screenshot_saver.save(
+                                frame, person.bbox, person.track_id
+                            )
+                            self._alert_logger.log(person.track_id, ratio, screenshot_name)
                     else:
                         color = (0, 255, 0)
                         label = f"Normal ID: {person.track_id}"
