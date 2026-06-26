@@ -13,6 +13,7 @@ import numpy as np
 import yaml
 
 from src.utils import draw_bbox, format_iso8601
+from src.hse_agent import HSEAgent  # 🔥 Imported the HSE Agentic AI Module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -109,7 +110,6 @@ class PoseModel:
         self._model = YOLO(weights_path)
 
     def infer(self, frame: np.ndarray) -> list:
-        # High resolution coverage optimization (conf=0.35)
         results = self._model.track(frame, persist=True, verbose=False, classes=[0], conf=0.35)
         persons = []
         if not results:
@@ -211,6 +211,9 @@ class Pipeline:
         )
         self._alert_logger = AlertLogger(cfg["csv_log_path"])
         self._screenshot_saver = ScreenshotSaver(cfg["screenshots_dir"])
+        
+        # 🔥 Initialize the Multi-Agent System
+        self._agent = HSEAgent(email_cfg=cfg["email"], csv_log_path=cfg["csv_log_path"])
 
     def run(self) -> None:
         self._stream.open()
@@ -220,7 +223,6 @@ class Pipeline:
                 persons = self._model.infer(frame)
 
                 for person in persons:
-                    # Pure boolean evaluation logic (Clean & stable framework connection)
                     is_fall, ratio = self._detector.check(
                         person.bbox, person.keypoints, person.track_id
                     )
@@ -235,6 +237,11 @@ class Pipeline:
                                 frame, person.bbox, person.track_id
                             )
                             self._alert_logger.log(person.track_id, ratio, screenshot_name)
+                            
+                        # 🔥 AGENTIC AI FOR SLIP & FALL TRIGGER
+                        # Isko hum frame verification loop me continuous pass karenge,
+                        # hse_agent automatic cooldown check karke tool trigger karega.
+                        self._agent.execute_incident_protocol("SLIP_FALL", person.track_id)
                     else:
                         color = (0, 255, 0)
                         label = f"Normal ID: {person.track_id}"
