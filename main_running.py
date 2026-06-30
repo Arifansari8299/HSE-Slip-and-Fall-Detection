@@ -3,11 +3,12 @@
 import sys
 import os
 import cv2
+import time
 
 # Ensure project directories are visible to the interpreter BEFORE imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.pipeline import load_config, StreamReader, PoseModel
+from src.pipeline import load_config, StreamReader, PoseModel, RunningLogger
 from src.running_detector import RunningDetector
 from src.utils import draw_bbox
 from src.hse_agent import HSEAgent
@@ -29,7 +30,17 @@ def main():
     detector = RunningDetector(velocity_threshold=0.45, consecutive_frames=6)
     
     # Initialize Multi-Agent System
-    agent = HSEAgent(email_cfg=cfg["email"], csv_log_path=cfg["csv_log_path"])
+    agent = HSEAgent(
+        email_cfg=cfg["email"],
+        csv_log_path=cfg["csv_log_path"],
+        running_log_path=cfg["running_log_path"],
+    )
+
+    # Dedicated CSV logger for running events → alerts/running_logs.csv
+    running_logger = RunningLogger(cfg["running_log_path"])
+
+    # Cooldown tracker for CSV logging (avoid duplicate rows per detection burst)
+    _logged_running: dict = {}
 
     # 🛠️ DISPLAY LAG OPTIMIZATION:
     # High-res stream window ko pehle se optimize kar dete hain taaki rendering delay na ho
@@ -52,10 +63,18 @@ def main():
                 is_running = detector.check(person.bbox, person.track_id)
 
                 if is_running:
-                    color = (0, 0, 255)  # Sudden intense RED alert box
+                    color = (0, 0, 255)
                     label = f"RUNNING ALERT! ID: {person.track_id}"
-                    
-                    # 🔥 AGENTIC AI TRIGGER (Fixed: Using correct object dot notation)
+
+                    # Log running event to CSV (once per 30s per person)
+                    now = time.time()
+                    last = _logged_running.get(person.track_id, 0)
+                    if now - last >= 30:
+                        _logged_running[person.track_id] = now
+                        running_logger.log(person.track_id)
+                        print(f"📝 [CSV LOG] RUNNING_PANIC written → alerts/running_logs.csv | Person ID #{person.track_id}")
+
+                    # Agentic AI trigger
                     agent.execute_incident_protocol("RUNNING_PANIC", person.track_id)
                 else:
                     color = (0, 255, 0)  # Safe normal working GREEN box

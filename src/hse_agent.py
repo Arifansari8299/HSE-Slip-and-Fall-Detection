@@ -200,10 +200,12 @@ class EscalationAgent(BaseAgent):
     Auto-escalates when repeat thresholds are breached.
     """
 
-    def __init__(self, email_cfg: dict, memory: IncidentMemory, csv_log_path: str):
+    def __init__(self, email_cfg: dict, memory: IncidentMemory,
+                 csv_log_path: str, running_log_path: str = ""):
         super().__init__(email_cfg)
         self._memory = memory
         self._csv_log_path = csv_log_path
+        self._running_log_path = running_log_path
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._running = False
 
@@ -326,20 +328,24 @@ class HSEAgent:
     autonomous routing, memory-driven decisions, and background monitoring.
     """
 
-    def __init__(self, email_cfg: dict, csv_log_path: str = "alerts/logs.csv"):
+    def __init__(self, email_cfg: dict, csv_log_path: str = "alerts/logs.csv",
+                 running_log_path: str = "alerts/running_logs.csv"):
         self._cfg = email_cfg
         self._cooldown = email_cfg.get("cooldown_seconds", 30)
         self._last_action: dict[str, float] = {}
 
         # Shared memory across all agents
-        self._memory = IncidentMemory(csv_log_path)
+        self._memory = IncidentMemory(csv_log_path, running_log_path=running_log_path)
 
         # Specialist sub-agents
         self._fall_agent = FallResponseAgent(email_cfg)
         self._panic_agent = PanicResponseAgent(email_cfg)
 
         # Background escalation agent — starts monitoring immediately
-        self._escalation_agent = EscalationAgent(email_cfg, self._memory, csv_log_path)
+        self._escalation_agent = EscalationAgent(
+            email_cfg, self._memory, csv_log_path,
+            running_log_path=running_log_path
+        )
         self._escalation_agent.start()
 
         logger.info("[HSEOrchestrator] ✅ Multi-agent system initialized (3 agents active)")

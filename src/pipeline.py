@@ -165,6 +165,42 @@ class AlertLogger:
             logger.error("Failed to write CSV log: %s", e)
 
 
+class RunningLogger:
+    """Dedicated CSV logger for RUNNING_PANIC events."""
+    _HEADER = ["timestamp", "track_id", "velocity", "shift"]
+
+    def __init__(self, csv_path: str):
+        self.csv_path = csv_path
+
+    def log(self, track_id: int, shift: str = "", velocity: float = 0.0) -> None:
+        try:
+            parent = os.path.dirname(self.csv_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            file_exists = os.path.isfile(self.csv_path)
+            with open(self.csv_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(self._HEADER)
+                now = datetime.now()
+                hour = now.hour
+                if not shift:
+                    shift = (
+                        "office_hours" if 9 <= hour < 18 else
+                        "evening_shift" if 18 <= hour < 22 else
+                        "night_shift"
+                    )
+                writer.writerow([
+                    format_iso8601(now),
+                    track_id,
+                    round(velocity, 4),
+                    shift,
+                ])
+                f.flush()
+        except IOError as e:
+            logger.error("Failed to write running CSV log: %s", e)
+
+
 class ScreenshotSaver:
     def __init__(self, screenshots_dir: str):
         self.screenshots_dir = screenshots_dir
@@ -213,7 +249,11 @@ class Pipeline:
         self._screenshot_saver = ScreenshotSaver(cfg["screenshots_dir"])
         
         # 🔥 Initialize the Multi-Agent System
-        self._agent = HSEAgent(email_cfg=cfg["email"], csv_log_path=cfg["csv_log_path"])
+        self._agent = HSEAgent(
+            email_cfg=cfg["email"],
+            csv_log_path=cfg["csv_log_path"],
+            running_log_path=cfg["running_log_path"],
+        )
 
     def run(self) -> None:
         self._stream.open()

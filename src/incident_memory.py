@@ -21,8 +21,9 @@ class IncidentMemory:
     Acts as the 'brain state' of the multi-agent system.
     """
 
-    def __init__(self, csv_log_path: str):
+    def __init__(self, csv_log_path: str, running_log_path: str = ""):
         self.csv_log_path = csv_log_path
+        self._running_log_path = running_log_path
 
         # Real-time session memory: {track_id: [(alert_type, timestamp), ...]}
         self._session_log: dict[int, list] = defaultdict(list)
@@ -68,7 +69,7 @@ class IncidentMemory:
 
     def get_today_summary(self) -> dict:
         """
-        Reads the CSV log and computes today's incident statistics.
+        Reads both CSV logs and computes today's incident statistics.
         Used by agents to generate intelligent email summaries.
         """
         today = datetime.date.today().isoformat()
@@ -77,24 +78,24 @@ class IncidentMemory:
         by_person = defaultdict(int)
         peak_hour = None
 
-        if not os.path.exists(self.csv_log_path):
-            return {"total": 0, "by_hour": {}, "by_person": {}, "peak_hour": "N/A"}
-
-        try:
-            with open(self.csv_log_path, "r") as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    if not row or not row[0].startswith(today):
-                        continue
-                    total += 1
-                    try:
-                        hour = int(row[0][11:13])
-                        by_hour[hour] += 1
-                        by_person[row[1]] += 1
-                    except (IndexError, ValueError):
-                        continue
-        except IOError:
-            pass
+        for path in [self.csv_log_path, self._running_log_path]:
+            if not path or not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r") as f:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if not row or not row[0].startswith(today):
+                            continue
+                        total += 1
+                        try:
+                            hour = int(row[0][11:13])
+                            by_hour[hour] += 1
+                            by_person[row[1]] += 1
+                        except (IndexError, ValueError):
+                            continue
+            except IOError:
+                pass
 
         if by_hour:
             peak_hour = max(by_hour, key=by_hour.get)
@@ -107,39 +108,30 @@ class IncidentMemory:
         }
 
     def get_historical_summary(self, days: int = 7) -> dict:
-        """
-        Reads last N days of CSV log for weekly trend analysis.
-        """
+        """Reads last N days from both CSVs for weekly trend analysis."""
         cutoff = datetime.date.today() - datetime.timedelta(days=days)
         total = 0
         by_day = defaultdict(int)
-        worst_day = None
 
-        if not os.path.exists(self.csv_log_path):
-            return {"total": total, "by_day": {}, "worst_day": "N/A"}
+        for path in [self.csv_log_path, self._running_log_path]:
+            if not path or not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r") as f:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if not row:
+                            continue
+                        try:
+                            date_str = row[0][:10]
+                            row_date = datetime.date.fromisoformat(date_str)
+                            if row_date >= cutoff:
+                                total += 1
+                                by_day[date_str] += 1
+                        except (IndexError, ValueError):
+                            continue
+            except IOError:
+                pass
 
-        try:
-            with open(self.csv_log_path, "r") as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    if not row:
-                        continue
-                    try:
-                        date_str = row[0][:10]
-                        row_date = datetime.date.fromisoformat(date_str)
-                        if row_date >= cutoff:
-                            total += 1
-                            by_day[date_str] += 1
-                    except (IndexError, ValueError):
-                        continue
-        except IOError:
-            pass
-
-        if by_day:
-            worst_day = max(by_day, key=by_day.get)
-
-        return {
-            "total": total,
-            "by_day": dict(by_day),
-            "worst_day": worst_day or "N/A",
-        }
+        worst_day = max(by_day, key=by_day.get) if by_day else "N/A"
+        return {"total": total, "by_day": dict(by_day), "worst_day": worst_day}
