@@ -201,6 +201,65 @@ class RunningLogger:
             logger.error("Failed to write running CSV log: %s", e)
 
 
+class UnauthorizedEntryLogger:
+    """Dedicated CSV logger for UNAUTHORIZED_ENTRY events."""
+    _HEADER = ["timestamp", "track_id", "zone", "screenshot_filename"]
+
+    def __init__(self, csv_path: str):
+        self.csv_path = csv_path
+
+    def log(self, track_id: int, zone: str = "restricted_zone",
+            screenshot_name: str = "") -> None:
+        try:
+            parent = os.path.dirname(self.csv_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            file_exists = os.path.isfile(self.csv_path)
+            with open(self.csv_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(self._HEADER)
+                writer.writerow([
+                    format_iso8601(datetime.now()),
+                    track_id,
+                    zone,
+                    screenshot_name,
+                ])
+                f.flush()
+        except IOError as e:
+            logger.error("Failed to write unauthorized entry CSV log: %s", e)
+
+
+class MachineLogger:
+    """Dedicated CSV logger for MACHINE_CROWDING events."""
+    _HEADER = ["timestamp", "person_count", "track_ids", "zone", "screenshot_filename"]
+
+    def __init__(self, csv_path: str):
+        self.csv_path = csv_path
+
+    def log(self, person_count: int, track_ids: list,
+            zone: str = "machine_zone", screenshot_name: str = "") -> None:
+        try:
+            parent = os.path.dirname(self.csv_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            file_exists = os.path.isfile(self.csv_path)
+            with open(self.csv_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(self._HEADER)
+                writer.writerow([
+                    format_iso8601(datetime.now()),
+                    person_count,
+                    str(track_ids),
+                    zone,
+                    screenshot_name,
+                ])
+                f.flush()
+        except IOError as e:
+            logger.error("Failed to write machine crowding CSV log: %s", e)
+
+
 class ScreenshotSaver:
     def __init__(self, screenshots_dir: str):
         self.screenshots_dir = screenshots_dir
@@ -247,7 +306,7 @@ class Pipeline:
         )
         self._alert_logger = AlertLogger(cfg["csv_log_path"])
         self._screenshot_saver = ScreenshotSaver(cfg["screenshots_dir"])
-        
+
         # 🔥 Initialize the Multi-Agent System
         self._agent = HSEAgent(
             email_cfg=cfg["email"],
@@ -262,25 +321,22 @@ class Pipeline:
                 frame = self._stream.read()
                 persons = self._model.infer(frame)
 
+                # ── Fall Detection only ──
                 for person in persons:
                     is_fall, ratio = self._detector.check(
                         person.bbox, person.keypoints, person.track_id
                     )
-                    
+
                     if is_fall:
                         color = (0, 0, 255)
                         label = f"FALL DETECTED! ID: {person.track_id}"
-                        
-                        # Trigger system logging and snapshot ONLY once per track session
+
                         if self._detector.should_save_screenshot(person.track_id):
                             screenshot_name = self._screenshot_saver.save(
                                 frame, person.bbox, person.track_id
                             )
                             self._alert_logger.log(person.track_id, ratio, screenshot_name)
-                            
-                        # 🔥 AGENTIC AI FOR SLIP & FALL TRIGGER
-                        # Isko hum frame verification loop me continuous pass karenge,
-                        # hse_agent automatic cooldown check karke tool trigger karega.
+
                         self._agent.execute_incident_protocol("SLIP_FALL", person.track_id)
                     else:
                         color = (0, 255, 0)
@@ -294,3 +350,4 @@ class Pipeline:
         finally:
             self._stream.release()
             cv2.destroyAllWindows()
+
