@@ -345,6 +345,70 @@ class MachineCrowdingAgent(BaseAgent):
 
 
 # ─────────────────────────────────────────────────────────
+#  NO MOVEMENT OPERATOR AGENT
+#  Speciality: operator motionless beyond threshold
+# ─────────────────────────────────────────────────────────
+
+class NoMovementAgent(BaseAgent):
+    """
+    Autonomous agent for operator stillness / welfare check.
+    Fires when a person hasn't moved for the configured threshold.
+    Could indicate unconsciousness, medical emergency, or equipment lock-in.
+    """
+
+    def respond(self, track_id: int, memory: IncidentMemory, context: dict):
+        guard = self._cfg["guard"]
+        supervisor = self._cfg["supervisor"]
+        today_stats = memory.get_today_summary()
+
+        color = "#9b00d3"
+        risk_note = (
+            f"⚠️ Person ID #{track_id} has not moved for an extended period. "
+            "This may indicate unconsciousness, medical distress, or a machinery lock-in situation."
+        )
+
+        guard_html = _build_guard_email(
+            name=guard["name"], color=color, emoji="🟣",
+            severity="HIGH", category="Operator No Movement / Welfare Check",
+            track_id=track_id, context=context,
+            action="Proceed immediately to the flagged person. Perform a welfare check. "
+                   "If unresponsive, call emergency services and do not move the person.",
+            repeat_note=risk_note,
+        )
+        ok = self._send_email(
+            guard["email"],
+            f"🟣 WELFARE CHECK: No Movement Detected | Person ID #{track_id} | {context['timestamp']}",
+            guard_html,
+        )
+        if ok:
+            logger.info("[NoMovementAgent] 📩 Guard notified → %s", guard["email"])
+
+        # Always escalate to supervisor — potential medical emergency
+        supervisor_html = _build_supervisor_email(
+            name=supervisor["name"], color=color, emoji="🟣",
+            severity="HIGH", category="Operator No Movement",
+            alert_type="NO_MOVEMENT_OPERATOR", track_id=track_id, context=context,
+            reasoning=(
+                f"{risk_note} "
+                f"Detected during <strong>{context['shift_label']}</strong>. "
+                f"Today's total incidents: <strong>{today_stats['total']}</strong>."
+            ),
+            action="Ensure guard has responded. If person is unresponsive, activate emergency protocol. "
+                   "Document the event and review workstation ergonomics and operator wellness policy.",
+            today_stats=today_stats,
+        )
+        ok = self._send_email(
+            supervisor["email"],
+            f"[HSE WELFARE REPORT] No Movement Detected — ID #{track_id} | {context['timestamp']}",
+            supervisor_html,
+        )
+        if ok:
+            logger.info("[NoMovementAgent] 📧 Supervisor notified → %s", supervisor["email"])
+
+        _trigger_buzzer("NO_MOVEMENT_OPERATOR")
+
+
+# ─────────────────────────────────────────────────────────
 #  ESCALATION AGENT
 #  Runs on a background thread, monitors memory for patterns
 #  and auto-escalates without waiting for a new detection event
@@ -499,6 +563,7 @@ class HSEAgent:
         self._panic_agent = PanicResponseAgent(email_cfg)
         self._unauthorized_agent = UnauthorizedEntryAgent(email_cfg)
         self._machine_agent = MachineCrowdingAgent(email_cfg)
+        self._no_movement_agent = NoMovementAgent(email_cfg)
 
         # Background escalation agent — starts monitoring immediately
         self._escalation_agent = EscalationAgent(
@@ -507,7 +572,7 @@ class HSEAgent:
         )
         self._escalation_agent.start()
 
-        logger.info("[HSEOrchestrator] ✅ Multi-agent system initialized (5 agents active)")
+        logger.info("[HSEOrchestrator] ✅ Multi-agent system initialized (6 agents active)")
 
     def execute_incident_protocol(self, alert_type: str, track_id: int):
         """
@@ -541,6 +606,8 @@ class HSEAgent:
             self._unauthorized_agent.respond(track_id, self._memory, context)
         elif alert_type == "MACHINE_CROWDING":
             self._machine_agent.respond(track_id, self._memory, context)
+        elif alert_type == "NO_MOVEMENT_OPERATOR":
+            self._no_movement_agent.respond(track_id, self._memory, context)
         else:
             logger.warning("[HSEOrchestrator] Unknown alert type: %s", alert_type)
 

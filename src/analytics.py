@@ -132,3 +132,101 @@ class HSEOfficeAnalytics:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 255), 2)
 
         return alert, frame
+
+    def check_operator_stillness(self, tracks, frame, threshold_secs: float = 120.0,
+                                  drift_pixels: float = 5.0):
+        """
+        Detects operators who haven't moved for >= threshold_secs.
+
+        Tracks Euclidean distance of bottom-center point per track_id across frames.
+        If movement drift <= drift_pixels, accumulates elapsed time.
+        Resets timer when person moves more than drift_pixels.
+
+        Args:
+            tracks:          [{'track_id': id, 'bbox': [x1,y1,x2,y2]}, ...]
+            frame:           current video frame (drawn on in-place)
+            threshold_secs:  seconds of stillness before alert fires
+            drift_pixels:    max movement (px) to still count as stationary
+
+        Returns:
+            alerts: list of {event, track_id, elapsed_secs, message}
+            frame:  annotated frame
+        """
+        import time as _time
+        import math as _math
+
+        if not hasattr(self, '_still_positions'):
+            self._still_positions = {}   # {track_id: (cx, cy, start_time)}
+            self._still_alerted = {}     # {track_id: last_alert_time}
+
+        alerts = []
+        now = _time.time()
+        current_ids = set()
+
+        for track in tracks:
+            track_id = track.get('track_id')
+            x1, y1, x2, y2 = track.get('bbox')
+            cx = int((x1 + x2) / 2)
+            cy = int(y2)   # bottom-center
+            current_ids.add(track_id)
+
+            if track_id not in self._still_positions:
+                # First time seeing this ID
+                self._still_positions[track_id] = (cx, cy, now)
+                elapsed = 0.0
+            else:
+                prev_cx, prev_cy, start_time = self._still_positions[track_id]
+                dist = _math.sqrt((cx - prev_cx) ** 2 + (cy - prev_cy) ** 2)
+
+                if dist > drift_pixels:
+                    # Person moved — reset timer to current position
+                    self._still_positions[track_id] = (cx, cy, now)
+                    elapsed = 0.0
+                else:
+                    # Still stationary — keep original start_time
+                    elapsed = now - start_time
+
+            # Choose color based on elapsed time
+            ratio = min(elapsed / threshold_secs, 1.0)
+            if elapsed >= threshold_secs:
+                color = (255, 0, 255)    # magenta — alert
+                status = f"NO MOVEMENT {int(elapsed)}s!"
+            elif ratio > 0.6:
+                color = (0, 165, 255)    # orange — warning
+                status = f"Still {int(elapsed)}s"
+            else:
+                color = (0, 255, 0)      # green — normal
+                status = f"ID: {track_id}"
+
+            # Draw bbox + label
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+            cv2.putText(frame, status, (int(x1), int(y1) - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+
+            # Progress bar under bbox
+            bar_w = int((x2 - x1) * ratio)
+            cv2.rectangle(frame, (int(x1), int(y2) + 4),
+                          (int(x1) + bar_w, int(y2) + 10), color, -1)
+            cv2.rectangle(frame, (int(x1), int(y2) + 4),
+                          (int(x2), int(y2) + 10), (80, 80, 80), 1)
+
+            # Fire alert if threshold exceeded, with 30s re-alert cooldown
+            if elapsed >= threshold_secs:
+                last_alerted = self._still_alerted.get(track_id, 0)
+                if now - last_alerted >= 30:
+                    self._still_alerted[track_id] = now
+                    alerts.append({
+                        "event": "NO_MOVEMENT_OPERATOR",
+                        "track_id": track_id,
+                        "elapsed_secs": int(elapsed),
+                        "bbox": (x1, y1, x2, y2),
+                        "message": f"Person ID {track_id} has not moved for {int(elapsed)}s.",
+                    })
+
+        # Clean up IDs that left the frame
+        gone = set(self._still_positions.keys()) - current_ids
+        for tid in gone:
+            self._still_positions.pop(tid, None)
+            self._still_alerted.pop(tid, None)
+
+        return alerts, frame

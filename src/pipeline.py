@@ -260,6 +260,34 @@ class MachineLogger:
             logger.error("Failed to write machine crowding CSV log: %s", e)
 
 
+class StillnessLogger:
+    """Dedicated CSV logger for NO_MOVEMENT_OPERATOR events."""
+    _HEADER = ["timestamp", "track_id", "elapsed_secs", "screenshot_filename"]
+
+    def __init__(self, csv_path: str):
+        self.csv_path = csv_path
+
+    def log(self, track_id: int, elapsed_secs: int, screenshot_name: str = "") -> None:
+        try:
+            parent = os.path.dirname(self.csv_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            file_exists = os.path.isfile(self.csv_path)
+            with open(self.csv_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(self._HEADER)
+                writer.writerow([
+                    format_iso8601(datetime.now()),
+                    track_id,
+                    elapsed_secs,
+                    screenshot_name,
+                ])
+                f.flush()
+        except IOError as e:
+            logger.error("Failed to write stillness CSV log: %s", e)
+
+
 class ScreenshotSaver:
     def __init__(self, screenshots_dir: str):
         self.screenshots_dir = screenshots_dir
