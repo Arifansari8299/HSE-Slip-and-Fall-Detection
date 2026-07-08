@@ -188,6 +188,227 @@ class PanicResponseAgent(BaseAgent):
 
 
 # ─────────────────────────────────────────────────────────
+#  UNAUTHORIZED ENTRY AGENT
+#  Speciality: restricted zone breach response
+# ─────────────────────────────────────────────────────────
+
+class UnauthorizedEntryAgent(BaseAgent):
+    """
+    Autonomous agent for unauthorized zone entry response.
+    Guard always notified immediately.
+    Supervisor notified on repeat breach or night shift.
+    """
+
+    def respond(self, track_id: int, memory: IncidentMemory, context: dict):
+        guard = self._cfg["guard"]
+        supervisor = self._cfg["supervisor"]
+
+        count_session = memory.get_incident_count(
+            track_id, "UNAUTHORIZED_ENTRY", within_seconds=3600
+        )
+        today_stats = memory.get_today_summary()
+
+        repeat_note = (
+            f"⚠️ REPEAT BREACH: Person ID #{track_id} has entered the restricted "
+            f"zone <strong>{count_session} times</strong> in the last hour. "
+            "Consider immediate access control action."
+            if count_session >= 2 else
+            f"First recorded zone breach for ID #{track_id} in this session."
+        )
+
+        color = "#7b2ff7"
+
+        # Guard email — always sent, first responder
+        guard_html = _build_guard_email(
+            name=guard["name"], color=color, emoji="🚫",
+            severity="HIGH", category="Unauthorized Zone Entry",
+            track_id=track_id, context=context,
+            action="Proceed to the restricted zone immediately. Identify and escort "
+                   "the person out. Check if access badge was bypassed.",
+            repeat_note=repeat_note,
+        )
+        ok = self._send_email(
+            guard["email"],
+            f"🚫 UNAUTHORIZED ENTRY — Restricted Zone Breach | Person ID #{track_id} | {context['timestamp']}",
+            guard_html,
+        )
+        if ok:
+            logger.info("[UnauthorizedEntryAgent] 📩 Guard notified → %s", guard["email"])
+
+        # Supervisor notified on repeat breach or night shift
+        if count_session >= 2 or context["shift"] == "NIGHT_SHIFT":
+            reasoning = (
+                f"{repeat_note} "
+                f"{'Night shift: reduced guard presence on-site. ' if context['shift'] == 'NIGHT_SHIFT' else ''}"
+                f"Today's total incidents: <strong>{today_stats['total']}</strong>."
+            )
+            supervisor_html = _build_supervisor_email(
+                name=supervisor["name"], color=color, emoji="🚫",
+                severity="HIGH", category="Unauthorized Zone Entry",
+                alert_type="UNAUTHORIZED_ENTRY", track_id=track_id, context=context,
+                reasoning=reasoning,
+                action="Review access control logs. Verify CCTV footage. "
+                       "Update the security incident register and notify the HSE compliance team.",
+                today_stats=today_stats,
+            )
+            ok = self._send_email(
+                supervisor["email"],
+                f"[HSE SECURITY REPORT] Unauthorized Entry — ID #{track_id} | {context['timestamp']}",
+                supervisor_html,
+            )
+            if ok:
+                logger.info(
+                    "[UnauthorizedEntryAgent] 📧 Supervisor escalated → %s",
+                    supervisor["email"],
+                )
+
+        _trigger_buzzer("UNAUTHORIZED_ENTRY")
+
+
+# ─────────────────────────────────────────────────────────
+#  MACHINE CROWDING AGENT
+#  Speciality: 2+ persons detected on/around machine
+# ─────────────────────────────────────────────────────────
+
+class MachineCrowdingAgent(BaseAgent):
+    """
+    Autonomous agent for machine crowding safety response.
+    Triggers when 2 or more persons are detected in a machine zone.
+    Always notifies guard. Escalates supervisor on 3+ persons or night shift.
+    """
+
+    def respond(self, track_id: int, memory: IncidentMemory, context: dict):
+        guard = self._cfg["guard"]
+        supervisor = self._cfg["supervisor"]
+
+        # track_id here carries the person count (passed from main script)
+        count = track_id
+        today_stats = memory.get_today_summary()
+
+        if count >= 3:
+            severity = "CRITICAL"
+            color = "#cc0000"
+            risk_note = (
+                f"🔴 CRITICAL: <strong>{count} persons</strong> detected in the machine zone simultaneously. "
+                "Immediate intervention required to prevent machinery accident."
+            )
+            action = "Stop all machines in the zone immediately. Ensure all personnel leave the area. Perform safety check before restarting."
+        else:
+            severity = "HIGH"
+            color = "#e65c00"
+            risk_note = (
+                f"⚠️ <strong>{count} persons</strong> detected in the machine zone. "
+                "Only 1 person is permitted near operating machinery."
+            )
+            action = "Proceed to machine zone immediately. Remove excess personnel. Remind workers of safety protocols."
+
+        guard_html = _build_guard_email(
+            name=guard["name"], color=color, emoji="⚙️",
+            severity=severity, category="Machine Zone Crowding",
+            track_id=count, context=context,
+            action=action,
+            repeat_note=risk_note,
+        )
+        ok = self._send_email(
+            guard["email"],
+            f"⚙️ {severity}: {count} Persons in Machine Zone | {context['timestamp']}",
+            guard_html,
+        )
+        if ok:
+            logger.info("[MachineCrowdingAgent] 📩 Guard notified → %s", guard["email"])
+
+        # Escalate to supervisor on 3+ persons or night shift
+        if count >= 3 or context["shift"] == "NIGHT_SHIFT":
+            reasoning = (
+                f"{risk_note} "
+                f"{'Night shift: reduced supervision increases risk. ' if context['shift'] == 'NIGHT_SHIFT' else ''}"
+                f"Today's total incidents: <strong>{today_stats['total']}</strong>."
+            )
+            supervisor_html = _build_supervisor_email(
+                name=supervisor["name"], color=color, emoji="⚙️",
+                severity=severity, category="Machine Zone Crowding",
+                alert_type="MACHINE_CROWDING", track_id=count, context=context,
+                reasoning=reasoning,
+                action="Review machine zone safety policy. Verify physical barriers are in place. "
+                       "Update HSE incident register and conduct toolbox talk with the team.",
+                today_stats=today_stats,
+            )
+            ok = self._send_email(
+                supervisor["email"],
+                f"[HSE MACHINE SAFETY] {count} Persons in Machine Zone | {context['timestamp']}",
+                supervisor_html,
+            )
+            if ok:
+                logger.info("[MachineCrowdingAgent] 📧 Supervisor escalated → %s", supervisor["email"])
+
+        _trigger_buzzer("MACHINE_CROWDING")
+
+
+# ─────────────────────────────────────────────────────────
+#  NO MOVEMENT OPERATOR AGENT
+#  Speciality: operator motionless beyond threshold
+# ─────────────────────────────────────────────────────────
+
+class NoMovementAgent(BaseAgent):
+    """
+    Autonomous agent for operator stillness / welfare check.
+    Fires when a person hasn't moved for the configured threshold.
+    Could indicate unconsciousness, medical emergency, or equipment lock-in.
+    """
+
+    def respond(self, track_id: int, memory: IncidentMemory, context: dict):
+        guard = self._cfg["guard"]
+        supervisor = self._cfg["supervisor"]
+        today_stats = memory.get_today_summary()
+
+        color = "#9b00d3"
+        risk_note = (
+            f"⚠️ Person ID #{track_id} has not moved for an extended period. "
+            "This may indicate unconsciousness, medical distress, or a machinery lock-in situation."
+        )
+
+        guard_html = _build_guard_email(
+            name=guard["name"], color=color, emoji="🟣",
+            severity="HIGH", category="Operator No Movement / Welfare Check",
+            track_id=track_id, context=context,
+            action="Proceed immediately to the flagged person. Perform a welfare check. "
+                   "If unresponsive, call emergency services and do not move the person.",
+            repeat_note=risk_note,
+        )
+        ok = self._send_email(
+            guard["email"],
+            f"🟣 WELFARE CHECK: No Movement Detected | Person ID #{track_id} | {context['timestamp']}",
+            guard_html,
+        )
+        if ok:
+            logger.info("[NoMovementAgent] 📩 Guard notified → %s", guard["email"])
+
+        # Always escalate to supervisor — potential medical emergency
+        supervisor_html = _build_supervisor_email(
+            name=supervisor["name"], color=color, emoji="🟣",
+            severity="HIGH", category="Operator No Movement",
+            alert_type="NO_MOVEMENT_OPERATOR", track_id=track_id, context=context,
+            reasoning=(
+                f"{risk_note} "
+                f"Detected during <strong>{context['shift_label']}</strong>. "
+                f"Today's total incidents: <strong>{today_stats['total']}</strong>."
+            ),
+            action="Ensure guard has responded. If person is unresponsive, activate emergency protocol. "
+                   "Document the event and review workstation ergonomics and operator wellness policy.",
+            today_stats=today_stats,
+        )
+        ok = self._send_email(
+            supervisor["email"],
+            f"[HSE WELFARE REPORT] No Movement Detected — ID #{track_id} | {context['timestamp']}",
+            supervisor_html,
+        )
+        if ok:
+            logger.info("[NoMovementAgent] 📧 Supervisor notified → %s", supervisor["email"])
+
+        _trigger_buzzer("NO_MOVEMENT_OPERATOR")
+
+
+# ─────────────────────────────────────────────────────────
 #  ESCALATION AGENT
 #  Runs on a background thread, monitors memory for patterns
 #  and auto-escalates without waiting for a new detection event
@@ -340,6 +561,9 @@ class HSEAgent:
         # Specialist sub-agents
         self._fall_agent = FallResponseAgent(email_cfg)
         self._panic_agent = PanicResponseAgent(email_cfg)
+        self._unauthorized_agent = UnauthorizedEntryAgent(email_cfg)
+        self._machine_agent = MachineCrowdingAgent(email_cfg)
+        self._no_movement_agent = NoMovementAgent(email_cfg)
 
         # Background escalation agent — starts monitoring immediately
         self._escalation_agent = EscalationAgent(
@@ -348,7 +572,7 @@ class HSEAgent:
         )
         self._escalation_agent.start()
 
-        logger.info("[HSEOrchestrator] ✅ Multi-agent system initialized (3 agents active)")
+        logger.info("[HSEOrchestrator] ✅ Multi-agent system initialized (6 agents active)")
 
     def execute_incident_protocol(self, alert_type: str, track_id: int):
         """
@@ -378,6 +602,12 @@ class HSEAgent:
             self._fall_agent.respond(track_id, self._memory, context)
         elif alert_type == "RUNNING_PANIC":
             self._panic_agent.respond(track_id, self._memory, context)
+        elif alert_type == "UNAUTHORIZED_ENTRY":
+            self._unauthorized_agent.respond(track_id, self._memory, context)
+        elif alert_type == "MACHINE_CROWDING":
+            self._machine_agent.respond(track_id, self._memory, context)
+        elif alert_type == "NO_MOVEMENT_OPERATOR":
+            self._no_movement_agent.respond(track_id, self._memory, context)
         else:
             logger.warning("[HSEOrchestrator] Unknown alert type: %s", alert_type)
 
