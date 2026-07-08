@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HSE AI Safety System — Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    min-height: 100vh;
+    padding: 30px 20px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: #58a6ff;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 12px;
+    color: #8b949e;
+    margin-bottom: 36px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .diagram {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    align-items: center;
+  }
+
+  /* ── LAYER ── */
+  .layer {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .layer-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8b949e;
+    margin-bottom: 8px;
+  }
+
+  .layer-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  /* ── BOX ── */
+  .box {
+    border-radius: 10px;
+    padding: 14px 18px;
+    min-width: 160px;
+    text-align: center;
+    position: relative;
+    transition: transform 0.2s;
+    cursor: default;
+  }
+  .box:hover { transform: translateY(-3px); }
+
+  .box-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .box-sub {
+    font-size: 10px;
+    opacity: 0.75;
+    line-height: 1.4;
+  }
+  .box-tag {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 20px;
+    margin-top: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── COLORS ── */
+  .blue   { background: #0c2d6b; border: 1.5px solid #1f6feb; }
+  .blue .box-title { color: #58a6ff; }
+  .blue .box-tag   { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
+
+  .green  { background: #0d2e1f; border: 1.5px solid #238636; }
+  .green .box-title { color: #3fb950; }
+  .green .box-tag   { background: #23863633; color: #3fb950; border: 1px solid #238636; }
+
+  .orange { background: #2e1c0e; border: 1.5px solid #d97706; }
+  .orange .box-title { color: #f0883e; }
+  .orange .box-tag   { background: #d9770633; color: #f0883e; border: 1px solid #d97706; }
+
+  .red    { background: #2d0c0c; border: 1.5px solid #da3633; }
+  .red .box-title { color: #f85149; }
+  .red .box-tag   { background: #da363333; color: #f85149; border: 1px solid #da3633; }
+
+  .purple { background: #1e0c2e; border: 1.5px solid #8957e5; }
+  .purple .box-title { color: #bc8cff; }
+  .purple .box-tag   { background: #8957e533; color: #bc8cff; border: 1px solid #8957e5; }
+
+  .teal   { background: #0c2e2e; border: 1.5px solid #1abc9c; }
+  .teal .box-title { color: #56d8c8; }
+  .teal .box-tag   { background: #1abc9c33; color: #56d8c8; border: 1px solid #1abc9c; }
+
+  .gray   { background: #1c2128; border: 1.5px solid #30363d; }
+  .gray .box-title { color: #8b949e; }
+  .gray .box-tag   { background: #30363d55; color: #8b949e; border: 1px solid #30363d; }
+
+  /* ── WIDE BOX ── */
+  .box-wide {
+    min-width: 340px;
+    max-width: 520px;
+  }
+
+  /* ── AGENT CLUSTER ── */
+  .agent-cluster {
+    border: 1.5px solid #8957e5;
+    border-radius: 14px;
+    padding: 16px 20px 20px;
+    background: #12091e;
+    width: 100%;
+    max-width: 900px;
+  }
+  .cluster-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #bc8cff;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .cluster-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #8957e533;
+  }
+
+  /* ── ARROW ── */
+  .arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 4px 0;
+    gap: 0;
+  }
+  .arrow-line {
+    width: 2px;
+    height: 24px;
+    background: linear-gradient(to bottom, #30363d, #58a6ff);
+  }
+  .arrow-head {
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #58a6ff;
+  }
+  .arrow-label {
+    font-size: 10px;
+    color: #8b949e;
+    margin-top: 2px;
+    letter-spacing: 0.5px;
+  }
+
+  .arrow-split {
+    display: flex;
+    gap: 80px;
+    align-items: flex-start;
+    margin: 4px 0;
+    justify-content: center;
+  }
+  .arrow-split .arrow-line { background: linear-gradient(to bottom, #58a6ff, #8957e5); }
+  .arrow-split .arrow-head { border-top-color: #8957e5; }
+
+  /* ── DATA STORES ── */
+  .stores-row {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 900px;
+  }
+
+  .store-box {
+    border-radius: 8px;
+    padding: 12px 16px;
+    min-width: 140px;
+    text-align: center;
+    border: 1.5px dashed;
+  }
+  .store-box.csv   { border-color: #238636; background: #0d2e1f22; }
+  .store-box.csv .box-title { color: #3fb950; font-size: 12px; }
+  .store-box.chroma { border-color: #1f6feb; background: #0c2d6b22; }
+  .store-box.chroma .box-title { color: #58a6ff; font-size: 12px; }
+  .store-box.img   { border-color: #d97706; background: #2e1c0e22; }
+  .store-box.img .box-title { color: #f0883e; font-size: 12px; }
+
+  /* ── NOTIFICATION ROW ── */
+  .notif-row {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* ── FOOTER ── */
+  .footer-legend {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid #21262d;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+
+  /* ── RAG SECTION ── */
+  .rag-cluster {
+    border: 1.5px solid #1abc9c;
+    border-radius: 14px;
+    padding: 16px 20px 20px;
+    background: #0a1e1e;
+    width: 100%;
+    max-width: 900px;
+  }
+  .rag-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #56d8c8;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rag-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #1abc9c33;
+  }
+</style>
+</head>
+<body>
+
+<h1>🏭 HSE AI Safety Monitoring System</h1>
+<p class="subtitle">High-Level System Architecture · Agentic AI + RAG Pipeline</p>
+
+<div class="diagram">
+
+  <!-- INPUT LAYER -->
+  <div class="layer">
+    <div class="layer-label">Input Layer</div>
+    <div class="layer-row">
+      <div class="box blue">
+        <div class="box-title">📷 RTSP IP Camera</div>
+        <div class="box-sub">rtsp://192.168.x.x/stream</div>
+        <span class="box-tag">Live Feed</span>
+      </div>
+      <div class="box blue">
+        <div class="box-title">🎬 Local Video File</div>
+        <div class="box-sub">inputs/panic.mp4<br>inputs/fall.mp4</div>
+        <span class="box-tag">Recorded</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">raw frames</div></div>
+
+  <!-- STREAM LAYER -->
+  <div class="layer">
+    <div class="layer-label">Stream Layer</div>
+    <div class="box green box-wide">
+      <div class="box-title">⚡ StreamReader</div>
+      <div class="box-sub">Opens source · CAP_PROP_BUFFERSIZE=1 for RTSP · Auto-reconnect (5 retries)</div>
+      <span class="box-tag">pipeline.py</span>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">decoded frame (numpy)</div></div>
+
+  <!-- PERCEPTION LAYER -->
+  <div class="layer">
+    <div class="layer-label">Perception Layer</div>
+    <div class="box blue box-wide">
+      <div class="box-title">🧠 YOLOv8n-Pose Model</div>
+      <div class="box-sub">Person detection (class 0) · ByteTrack ID assignment<br>17 COCO keypoints · conf=0.35 · Local .pt weights</div>
+      <span class="box-tag">PoseModel · pipeline.py</span>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">PersonData (bbox, keypoints, track_id)</div></div>
+
+  <!-- DETECTION LAYER -->
+  <div class="layer">
+    <div class="layer-label">Detection / Analysis Layer</div>
+    <div class="layer-row">
+      <div class="box red">
+        <div class="box-title">🚨 Fall Detector</div>
+        <div class="box-sub">Aspect ratio threshold<br>Spine angle (keypoints)<br>Chair elimination filter<br>fall_frame_threshold=5</div>
+        <span class="box-tag">detector.py</span>
+      </div>
+      <div class="box orange">
+        <div class="box-title">⚡ Running Detector</div>
+        <div class="box-sub">Center-point velocity<br>Pixel displacement / dt<br>BBox height normalization<br>consecutive_frames=6</div>
+        <span class="box-tag">running_detector.py</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">SLIP_FALL / RUNNING_PANIC event</div></div>
+
+  <!-- MULTI-AGENT SYSTEM -->
+  <div class="agent-cluster">
+    <div class="cluster-label">🤖 HSE Multi-Agent System (hse_agent.py + incident_memory.py)</div>
+
+    <!-- Orchestrator -->
+    <div style="display:flex;justify-content:center;margin-bottom:14px;">
+      <div class="box purple box-wide">
+        <div class="box-title">🎯 HSEOrchestrator</div>
+        <div class="box-sub">Cooldown check (30s) · Records to IncidentMemory<br>Builds context (shift/time) · Routes to specialist agent</div>
+        <span class="box-tag">HSEAgent.__init__</span>
+      </div>
+    </div>
+
+    <!-- Shared Memory -->
+    <div style="display:flex;justify-content:center;margin-bottom:14px;">
+      <div class="box gray box-wide">
+        <div class="box-title">🧠 IncidentMemory (Shared)</div>
+        <div class="box-sub">Real-time session log · Historical CSV reader<br>get_incident_count() · is_repeat_offender() · get_today_summary()</div>
+        <span class="box-tag">incident_memory.py</span>
+      </div>
+    </div>
+
+    <!-- Three Agents -->
+    <div class="layer-row">
+      <div class="box red">
+        <div class="box-title">🚑 FallResponseAgent</div>
+        <div class="box-sub">Repeat fall detection<br>Medical urgency logic<br>Always escalates supervisor</div>
+        <span class="box-tag">SLIP_FALL specialist</span>
+      </div>
+      <div class="box orange">
+        <div class="box-title">🏃 PanicResponseAgent</div>
+        <div class="box-sub">3+ alerts in 10 min<br>= Evacuation risk flag<br>Night shift escalation</div>
+        <span class="box-tag">RUNNING_PANIC specialist</span>
+      </div>
+      <div class="box purple">
+        <div class="box-title">📊 EscalationAgent</div>
+        <div class="box-sub">Background thread (60s)<br>7-day CSV trend analysis<br>2× spike → auto alert</div>
+        <span class="box-tag">Background Monitor</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">tool execution</div></div>
+
+  <!-- TOOL EXECUTION -->
+  <div class="layer">
+    <div class="layer-label">Tool Execution Layer</div>
+    <div class="notif-row">
+      <div class="box red">
+        <div class="box-title">📩 Guard Email</div>
+        <div class="box-sub">Short · urgent · action block<br>Agent reasoning note<br>Gmail SMTP free</div>
+        <span class="box-tag">First Responder</span>
+      </div>
+      <div class="box blue">
+        <div class="box-title">📧 Supervisor Email</div>
+        <div class="box-sub">Full incident report<br>Today's stats table<br>Agent reasoning section</div>
+        <span class="box-tag">HSE Report</span>
+      </div>
+      <div class="box orange">
+        <div class="box-title">⚡ IoT Buzzer</div>
+        <div class="box-sub">HTTP POST to gateway<br>On-site audio alert</div>
+        <span class="box-tag">Physical Alert</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">persist logs</div></div>
+
+  <!-- DATA STORES -->
+  <div class="layer">
+    <div class="layer-label">Storage Layer</div>
+    <div class="stores-row">
+      <div class="store-box csv">
+        <div class="box-title">📄 alerts/logs.csv</div>
+        <div class="box-sub" style="font-size:10px;color:#8b949e;margin-top:4px;">SLIP_FALL events<br>timestamp · track_id<br>aspect_ratio · screenshot</div>
+      </div>
+      <div class="store-box csv">
+        <div class="box-title">📄 running_logs.csv</div>
+        <div class="box-sub" style="font-size:10px;color:#8b949e;margin-top:4px;">RUNNING_PANIC events<br>timestamp · track_id<br>velocity · shift</div>
+      </div>
+      <div class="store-box img">
+        <div class="box-title">🖼️ screenshots/</div>
+        <div class="box-sub" style="font-size:10px;color:#8b949e;margin-top:4px;">Annotated fall frames<br>fall_{id}_{ts}.jpg<br>Evidence capture</div>
+      </div>
+      <div class="store-box chroma">
+        <div class="box-title">🔷 ChromaDB</div>
+        <div class="box-sub" style="font-size:10px;color:#8b949e;margin-top:4px;">Persistent vector store<br>Gemini embeddings<br>alerts/chroma_db/</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">RAG retrieval</div></div>
+
+  <!-- RAG PIPELINE -->
+  <div class="rag-cluster">
+    <div class="rag-label">🔍 Gemini RAG Intelligence Pipeline (gemini_rag_agent.py)</div>
+    <div class="layer-row">
+      <div class="box teal">
+        <div class="box-title">📥 Document Loader</div>
+        <div class="box-sub">Reads both CSVs<br>MD5 dedup per row<br>Natural language chunks</div>
+        <span class="box-tag">_load_fall_docs / _load_running_docs</span>
+      </div>
+      <div class="box blue">
+        <div class="box-title">🧬 Gemini Embeddings</div>
+        <div class="box-sub">gemini-embedding-001<br>Semantic vector per chunk<br>Batch size 50</div>
+        <span class="box-tag">ChromaStore.upsert()</span>
+      </div>
+      <div class="box teal">
+        <div class="box-title">🔍 Vector Retrieval</div>
+        <div class="box-sub">Query → embed → cosine<br>Top-K=15 similar docs<br>ChromaDB HNSW index</div>
+        <span class="box-tag">ChromaStore.query()</span>
+      </div>
+      <div class="box purple">
+        <div class="box-title">💬 LLM Generation</div>
+        <div class="box-sub">Gemini 2.0 Flash<br>Groq Llama fallback<br>temp=0 · zero hallucination</div>
+        <span class="box-tag">GeminiRAGAgent.ask()</span>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:14px;">
+      <div class="box gray" style="display:inline-block;padding:10px 24px;">
+        <div class="box-title" style="color:#56d8c8;">✅ Factual Natural Language Answer</div>
+        <div class="box-sub">Grounded in retrieved context · Cites timestamps & Person IDs · Never hallucinate</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- LEGEND -->
+<div class="footer-legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#58a6ff;"></div>Input / Stream / Embedding</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3fb950;"></div>Stream Processing</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f85149;"></div>Fall Detection / Alert</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0883e;"></div>Running Detection / Panic</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#bc8cff;"></div>Multi-Agent System</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#56d8c8;"></div>RAG Intelligence</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#8b949e;"></div>Shared Memory / Storage</div>
+</div>
+
+</body>
+</html>
